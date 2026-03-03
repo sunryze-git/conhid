@@ -42,7 +42,7 @@ struct transport {
      * Block until `len` bytes arrive in `buf`, or `timeout_ms` expires.
      * Returns TRANSPORT_OK, TRANSPORT_ERR_TIMEOUT, or another negative code.
      */
-    int  (*recv)(transport_t *t, uint8_t *buf, size_t len, int timeout_ms);
+    int  (*recv)(transport_t *t, uint8_t *buf, size_t len, int timeout_ms, uint16_t expected_handle);
 
     /*
      * Close and free the transport. After this call `t` must not be used.
@@ -89,12 +89,9 @@ transport_t *usb_transport_open(uint16_t vid, uint16_t pid);
  */
 typedef struct {
     uint16_t cmd_write;     /* Command write handle  (default 0x0016) */
-    uint16_t cmd_resp1;     /* Response notify handle #1 (default 0x001E) */
-    uint16_t cmd_resp2;     /* Response notify handle #2 (default 0x001A, JoyCon only) */
-    uint16_t cmd_resp3;     /* Response notify handle #3 (default 0x0022) */
+    uint16_t cmd_resp1;     /* Response notify handle #1 (default 0x001A) */
     uint16_t hid_input;     /* HID input report handle   (default 0x000E) */
     uint16_t hid_input_ccc; /* CCC descriptor for HID input (default 0x000F) */
-    uint16_t report_rate;   /* Report-rate descriptor    (default 0x0010) */
 } ble_handles_t;
 
 /*

@@ -15,7 +15,7 @@ uinput is the most usable for us, as it gives us the most ability to have a comp
 I intend to bring this to support the entire Switch 2 generation of controllers, and these subsets of features:
 
 - Buttons, Joysticks (basic)
-- IMU (Gyroscope, Magnetometer (Joy Con 2), Accelerometer)
+- IMU (Gyroscope, Magnetometer, Accelerometer)
 - Mouse Input (Joy Con 2)
 - Haptics / Rumble
 

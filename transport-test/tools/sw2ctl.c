@@ -1,17 +1,8 @@
-/*
- * tools/sw2ctl.c -- Switch 2 controller BLE/USB test tool
- *
- * Usage:
- *   sw2ctl usb                   -- open first Switch 2 over USB
- *   sw2ctl ble <ADAPTER_MAC> <CONTROLLER_MAC>  -- open via BLE (adapter auto-detected)
- *
- * Runs the full init sequence from probe.c, then listens for input
- * report notifications and prints them raw.
- */
-
 #include "../src/transport.h"
 #include "../src/commands.h"
+#include "../src/responses.h"
 
+#include <asm-generic/errno.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
@@ -19,12 +10,6 @@
 #include <poll.h>
 
 #define PADDING     0x00
-
-/* -------------------------------------------------------------------------
- * Full init sequence -- taken directly from probe.c
- * Each command is sent then we wait up to 200ms for a response on the
- * command response handles before moving to the next one.
- * ------------------------------------------------------------------------- */
 
 typedef struct { const uint8_t *data; int len; } Cmd;
 
@@ -49,9 +34,11 @@ static const uint8_t nfc_unknown[] =            {NFC,REQUEST_MARKER,COMM_BLE,NFC
 static const uint8_t unknown_cmd_04[] =         {CMD_18,REQUEST_MARKER,COMM_BLE,CMD_18_UNKNOWN_01,0x00,0x00,            PADDING,PADDING};
 //static const uint8_t c22[] =                    {INIT,REQUEST_MARKER,COMM_BLE,INIT_WAKE_CONSOLE,0x00,0x00,              PADDING,PADDING};
 //static const uint8_t c23[] =                    {HAPTICS,REQUEST_MARKER,COMM_BLE,VIBRATION_PLAY_SAMPLE,0x00,0x04,       PADDING,PADDING,0x03,0x00,0x00};
+static const uint8_t get_battery_v[] =          {BATTERY,REQUEST_MARKER,COMM_BLE,BATTERY_GET_VOLTAGE,0x00,0x00,         PADDING, PADDING};
+static const uint8_t get_battery_c[] =          {BATTERY,REQUEST_MARKER,COMM_BLE,BATTERY_GET_CHARGE,0x00,0x00,          PADDING, PADDING};
+
 
 #define INIT_CMD_ENTRY(CMD) {CMD,sizeof(CMD)}
-
 static const Cmd init_cmds[] = {
     INIT_CMD_ENTRY(init),
     INIT_CMD_ENTRY(unknown_init_01),
@@ -66,17 +53,40 @@ static const Cmd init_cmds[] = {
     INIT_CMD_ENTRY(unknown_cmd_04),
     INIT_CMD_ENTRY(features_prepare_all),
     INIT_CMD_ENTRY(features_enable_all),
+    INIT_CMD_ENTRY(get_battery_c),
+    INIT_CMD_ENTRY(get_battery_v)
 };
-
 #define NUM_INIT_CMDS (int)(sizeof(init_cmds) / sizeof(init_cmds[0]))
 
-/* -------------------------------------------------------------------------
- * Send one init command and wait briefly for a response, printing both.
- * Mirrors probe.c's ble_send_init_cmd() -- we wait up to 200ms for an
- * ATT notification on any handle, then move on regardless.
- * ------------------------------------------------------------------------- */
+static void print_command_response(resp_cmd_header header, uint8_t* resp) {
+    // FIRMWARE - GET VERSION
+    if (header.cmd_id == FIRMWARE_INFO && header.subcmd_id == FIRMWARE_GET_VERSION) {
+        resp_get_firmware_ver_info version;
+        memcpy(&version, resp, sizeof(version));
 
-#define ATT_HANDLE_NOTIFY 0x1B
+        printf("[Detected Firmware]\n");
+        printf("Firmware Version : %d.%d.%d\n", version.controller_major, version.controller_minor, version.controller_micro);
+        printf("Bluetooth Version: %d.%d.%d\n", version.bluetooth_major, version.bluetooth_minor, version.bluetooth_micro);
+        printf("DSP Version      : %d.%d.%d\n", version.dsp_major, version.dsp_minor, version.dsp_micro);
+        printf("Controller Type  : %d\n", version.controller_type);
+    }
+
+    // BATTERY - GET VOLTAGE
+    if (header.cmd_id == BATTERY && header.subcmd_id == BATTERY_GET_VOLTAGE) {
+        resp_get_battery_voltage volt;
+        memcpy(&volt, resp, sizeof(volt));
+        printf("[Battery Voltage]\n");
+        printf("Battery Voltage: %d mV\n", volt.voltage);
+    }
+
+    // BATTERY - GET CHARGE
+    if (header.cmd_id == BATTERY && header.subcmd_id == BATTERY_GET_CHARGE) {
+        resp_get_charge_status charge;
+        memcpy(&charge, resp, sizeof(charge));
+        printf("[Battery Charge Status]\n");
+        printf("Battery Charge Status: %d\n", charge.status);
+    }
+}
 
 static void send_init_cmd(transport_t *t, int idx, const uint8_t *payload, int len)
 {
@@ -85,59 +95,43 @@ static void send_init_cmd(transport_t *t, int idx, const uint8_t *payload, int l
     printf("\n");
 
     int rc = t->send(t, payload, (size_t)len);
-    if (rc != TRANSPORT_OK) {
-        fprintf(stderr, "  send failed: %d\n", rc);
+    if (rc == 0) {
+        fprintf(stderr, " send failed, no bytes written.\n");
+        return;
+    } else if (rc < 0) {
+        fprintf(stderr, " send failed: %s\n", strerror(-rc));
         return;
     }
 
     uint8_t resp[TRANSPORT_MTU];
-    rc = t->recv(t, resp, sizeof(resp), 200);
-    if (rc == 0) printf(" << (no data received)\n");
-    if (rc <  0) fprintf(stderr, " recv error: %s", strerror(-rc));
-    if (rc > 0) {
-        printf(" << ");
-        for (int i = 0; i < rc; i++) printf("%02X ", resp[i]);
-        printf("\n");
+    rc = t->recv(t, resp, sizeof(resp), 500, 0x001A);
+    if (rc == 0) {
+        printf(" << (no data received)\n");
+        return;
+    }
+    if (rc <  0) {
+        fprintf(stderr, " recv error: %s\n", strerror(-rc));
+        return;
     }
 
-    usleep(100000);
+    resp_cmd_header header;
+    memcpy(&header, resp, sizeof(header));
+    printf(" << CMD ID: 0x%02X | DIR: 0x%02X | TRANSPORT: 0x%02X | SUB CMD: 0x%02X\n", header.cmd_id, header.direction, header.transport, header.subcmd_id);
 
-    if (payload[0] == FIRMWARE_INFO) {
-        uint8_t controller_major = resp[0];
-        uint8_t controller_minor = resp[1];
-        uint8_t controller_micro = resp[2];
-        uint8_t controller_type  = resp[3];
-        uint8_t bluetooth_major  = resp[4];
-        uint8_t bluetooth_minor  = resp[5];
-        uint8_t bluetooth_micro  = resp[6];
-        uint8_t dsp_major        = resp[8];
-        uint8_t dsp_minor        = resp[9];
-        uint8_t dsp_micro        = resp[10];
-
-        printf("[Detected Firmware]\n");
-        printf("Firmware Version : %d.%d.%d\n", controller_major, controller_minor, controller_micro);
-        printf("Bluetooth Version: %d.%d.%d\n", bluetooth_major, bluetooth_minor, bluetooth_micro);
-        printf("DSP Version      : %d.%d.%d\n", dsp_major, dsp_minor, dsp_micro);
-        printf("Controller Type  : %d\n", controller_type);
-    }
+    print_command_response(header, resp);
 }
-
-/* -------------------------------------------------------------------------
- * Listen loop -- print all incoming notifications after init
- * ------------------------------------------------------------------------- */
 
 static void listen_loop(transport_t *t)
 {
     printf("\nListening for input reports (Ctrl+C to stop)...\n");
     uint8_t buf[TRANSPORT_MTU];
-    for (;;) {
-        int rc = t->recv(t, buf, sizeof(buf), 5000);
-        if (rc == TRANSPORT_ERR_TIMEOUT) {
-            printf("  (no data for 5s)\n");
+    while (1) {
+        int rc = t->recv(t, buf, sizeof(buf), 5000, 0x000A);
+        if (rc == -ETIMEDOUT) {
+            printf("  (no data)\n");
             continue;
-        }
-        if (rc != TRANSPORT_OK) {
-            fprintf(stderr, "recv error: %d\n", rc);
+        } else if (rc < 0) {
+            fprintf(stderr, "recv error: %s\n", strerror(-rc));
             break;
         }
         printf("NOTIFY: \n");
@@ -145,10 +139,6 @@ static void listen_loop(transport_t *t)
         printf("\n");
     }
 }
-
-/* -------------------------------------------------------------------------
- * Main
- * ------------------------------------------------------------------------- */
 
 int main(int argc, char *argv[])
 {
@@ -175,17 +165,13 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    printf("[sw2ctl] Transport open (type=%s)\n",
-           t->type == TRANSPORT_TYPE_USB ? "USB" : "BLE");
+    printf("[sw2ctl] Transport open (type=%s)\n", t->type == TRANSPORT_TYPE_USB ? "USB" : "BLE");
 
-    /* Run full init sequence */
     printf("\n[sw2ctl] Running init sequence (%d commands)...\n", NUM_INIT_CMDS);
-    for (int i = 0; i < NUM_INIT_CMDS; i++)
-        send_init_cmd(t, i, init_cmds[i].data, init_cmds[i].len);
+    for (int i = 0; i < NUM_INIT_CMDS; i++) send_init_cmd(t, i, init_cmds[i].data, init_cmds[i].len);
 
     printf("\n[sw2ctl] Init complete.\n");
 
-    /* Then listen for input reports */
     listen_loop(t);
 
     t->close(t);

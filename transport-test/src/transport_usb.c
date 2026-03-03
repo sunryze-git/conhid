@@ -78,7 +78,7 @@ static int usb_send(transport_t *t, const uint8_t *buf, size_t len)
     return TRANSPORT_OK;
 }
 
-static int usb_recv(transport_t *t, uint8_t *buf, size_t len, int timeout_ms)
+static int usb_recv(transport_t *t, uint8_t *buf, size_t len, int timeout_ms, uint16_t expected_handle)
 {
     usb_priv_t *p = (usb_priv_t *)t->priv;
     int transferred = 0;

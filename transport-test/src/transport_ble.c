@@ -7,6 +7,7 @@
 #include <bluetooth/hci.h>
 #include <bluetooth/hci_lib.h>
 
+#include <errno.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,12 +23,8 @@
 
 static const ble_handles_t CCCD_HANDLES = {
     .cmd_write     = 0x0014,
-    .cmd_resp1     = 0x001E,
-    .cmd_resp2     = 0x001A,
-    .cmd_resp3     = 0x0022,
-    .hid_input     = 0x000E,
-    .hid_input_ccc = 0x000F,
-    .report_rate   = 0x0010,
+    .cmd_resp1     = 0x001A,
+    .hid_input     = 0x000A,
 };
 
 typedef struct {
@@ -52,7 +49,7 @@ static void drain(int sock)
 
 static int enable_notifications(int sock) {
     uint16_t cccd_handles[] = {
-        INPUT_REPORT_1, 
+        INPUT_REPORT_1, OUTPUT_REPORT_05
     };
 
     for (size_t i = 0; i < sizeof(cccd_handles) / sizeof(cccd_handles[0]); i++) {
@@ -119,7 +116,7 @@ static int connect_att(const char *adapter_mac, const char *controller_mac)
 static int ble_send(transport_t *t, const uint8_t *buf, size_t len)
 {
     ble_priv_t *p = (ble_priv_t *)t->priv;
-    if (!p || p->att_fd < 0) return TRANSPORT_ERR_CLOSED;
+    if (!p || p->att_fd < 0) return -ESHUTDOWN;
 
     uint8_t packet[TRANSPORT_MTU] = {
         ATT_OP_WRITE_CMD,
@@ -128,15 +125,16 @@ static int ble_send(transport_t *t, const uint8_t *buf, size_t len)
     };
     memcpy(&packet[3], buf, len);
 
-    if (write(p->att_fd, packet, len+3) < 0) return TRANSPORT_ERR_IO;
-    return TRANSPORT_OK;
+    int ret = write(p->att_fd, packet, len+3);
+    if (ret < 0) return -errno;
+    return ret;
 }
 
 // Recieve Data from the transport. Returns size of data, or -1 if IO error.
-static int ble_recv(transport_t *t, uint8_t *buf, size_t len, int timeout_ms)
+static int ble_recv(transport_t *t, uint8_t *buf, size_t len, int timeout_ms, uint16_t expected_handle)
 {
     ble_priv_t *p = (ble_priv_t *)t->priv;
-    if (!p || p->att_fd < 0) return TRANSPORT_ERR_CLOSED;
+    if (!p || p->att_fd < 0) return -ESHUTDOWN;
     
     fd_set fds;
     struct timeval tv;
@@ -145,33 +143,23 @@ static int ble_recv(transport_t *t, uint8_t *buf, size_t len, int timeout_ms)
     while (timeout_ms > 0) {
         FD_ZERO(&fds);
         FD_SET(p->att_fd, &fds);
-        tv.tv_sec = 0;
-        tv.tv_usec = 10000;
+        tv.tv_sec = timeout_ms / 1000;
+        tv.tv_usec = (timeout_ms % 1000) * 1000;
 
         int ready = select(p->att_fd + 1, &fds, NULL, NULL, &tv);
-        if (ready < 0) return ready;
-        if (ready == 0) {
-            timeout_ms -= 10;
-            continue;
-        }
+        if (ready < 0) return -errno;
+        if (ready == 0) return -ETIMEDOUT;
 
         int n = read(p->att_fd, raw, sizeof(raw));
         if (n <= 0) return n;
 
-        printf("DATA: ");
-        for (size_t i = 0; i < TRANSPORT_MTU; i++) printf("%02X ", raw[i]);
-        printf("\n");
-
-        if (raw[0] == ATT_OP_WRITE_RSP) continue;
-
-        if (raw[0] == ATT_OP_HANDLE_NOTIFY) {
+        if (raw[0] == ATT_OP_HANDLE_NOTIFY && n >= 3) {
             uint16_t h = raw[1] | (raw[2] << 8);
-            if (h == p->handles.cmd_resp1 || h == p->handles.cmd_resp2 || h == p->handles.cmd_resp3) {
+            if (h == expected_handle) {
+                printf("[CMD Response: 0x%04X]", h);
                 size_t payload_len = (size_t)(n-3);
                 if (payload_len > len) payload_len = len;
-
                 memcpy(buf, &raw[3], payload_len);
-                
                 return (int)payload_len;
             }
         }

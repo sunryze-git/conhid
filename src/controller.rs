@@ -1,7 +1,7 @@
 use crate::packet::*;
 use crate::report_05::{InputReport, ParseError};
 use crate::transport::Transport;
-use crate::transport::ble::BleTransport;
+use crate::transport::ble::{BleHandles, BleTransport};
 use crate::transport::usb::UsbTransport;
 
 pub struct Controller {
@@ -45,66 +45,44 @@ pub enum ControllerType {
 }
 
 impl Controller {
-    fn init_sequence() -> std::result::Result<Vec<Packet>, PacketError> {
+    fn init_sequence(kind: TransportType) -> std::result::Result<Vec<Packet>, PacketError> {
         Ok(vec![
             Packet::new(
                 Command::Init(InitSubCmd::UsbInit),
-                TransportType::Usb,
+                kind,
                 vec![0x01, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF],
             )?,
-            Packet::new(
-                Command::Cmd07(Cmd07SubCmd::Init),
-                TransportType::Usb,
-                vec![],
-            )?,
-            Packet::new(
-                Command::Cmd16(Cmd16SubCmd::Unknown01),
-                TransportType::Usb,
-                vec![],
-            )?,
+            Packet::new(Command::Cmd07(Cmd07SubCmd::Init), kind, vec![])?,
+            Packet::new(Command::Cmd16(Cmd16SubCmd::Unknown01), kind, vec![])?,
             Packet::new(
                 Command::Battery(BatterySubCmd::Unknown07),
-                TransportType::Usb,
+                kind,
                 vec![0x00, 0x00, 0x00, 0x00],
             )?,
             Packet::new(
                 Command::Led(LedSubCmd::SetPattern),
-                TransportType::Usb,
+                kind,
                 vec![0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
             )?,
             Packet::new(
                 Command::Haptics(HapticsSubCmd::PlaySample),
-                TransportType::Usb,
+                kind,
                 vec![0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
             )?,
-            Packet::new(
-                Command::Cmd11(Cmd11SubCmd::Unknown03),
-                TransportType::Usb,
-                vec![],
-            )?,
+            Packet::new(Command::Cmd11(Cmd11SubCmd::Unknown03), kind, vec![])?,
             Packet::new(
                 Command::Init(InitSubCmd::InputReport),
-                TransportType::Usb,
+                kind,
                 vec![0x05, 0x00, 0x00, 0x00],
             )?,
             Packet::new(
-                Command::Nfc(NfcSubCmd::Unknown0C),
-                TransportType::Usb,
-                vec![],
-            )?,
-            Packet::new(
-                Command::Cmd18(Cmd18SubCmd::Unknown01),
-                TransportType::Usb,
-                vec![],
-            )?,
-            Packet::new(
                 Command::Features(FeaturesSubCmd::SetMask),
-                TransportType::Usb,
+                kind,
                 vec![0xFF, 0x00, 0x00, 0x00],
             )?,
             Packet::new(
                 Command::Features(FeaturesSubCmd::Enable),
-                TransportType::Usb,
+                kind,
                 vec![0xFF, 0x00, 0x00, 0x00],
             )?,
         ])
@@ -116,7 +94,8 @@ impl Controller {
     }
 
     pub fn open_ble(adapter_mac: &str, controller_mac: &str) -> std::io::Result<Self> {
-        let transport = BleTransport::open(adapter_mac, controller_mac)?;
+        let transport =
+            BleTransport::open(adapter_mac, controller_mac, Some(BleHandles::default()))?;
         Self::init(Box::new(transport), TransportType::Ble)
     }
 
@@ -237,8 +216,8 @@ impl Controller {
             controller_type: ControllerType::ProController2,
         };
 
-        let packets =
-            Self::init_sequence().map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let packets = Self::init_sequence(kind)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
         println!(
             "[sw2ctl] Running init sequence ({} commands)",

@@ -328,8 +328,9 @@ pub enum TransportType {
 
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RequestType {
-    Response = 0x01,
+pub enum PacketStatus {
+    Success = 0x01,
+    Failure = 0x04,
     Request = 0x91,
 }
 
@@ -337,7 +338,7 @@ pub enum RequestType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Header {
     pub command: Command,
-    pub request_type: RequestType,
+    pub packet_status: PacketStatus,
     pub transport_type: TransportType,
     pub data_length: u8,
 }
@@ -348,7 +349,7 @@ impl Header {
     fn to_bytes(&self) -> [u8; Self::SIZE] {
         [
             self.command.cmd_byte(),
-            self.request_type as u8,
+            self.packet_status as u8,
             self.transport_type as u8,
             self.command.sub_cmd_byte(),
             0x00,
@@ -362,9 +363,12 @@ impl Header {
         let command = Command::from_bytes(b[0], b[3])?;
 
         let request_type = match b[1] {
-            0x91 => RequestType::Request,
-            0x01 => RequestType::Response,
-            v => return Err(PacketError::InvalidRequestType(v)),
+            0x91 => PacketStatus::Request,
+            0x04 => PacketStatus::Failure,
+            0x01 => PacketStatus::Success,
+            v => {
+                return Err(PacketError::InvalidRequestType(v));
+            }
         };
 
         let transport_type = match b[2] {
@@ -375,7 +379,7 @@ impl Header {
 
         Ok(Self {
             command,
-            request_type,
+            packet_status: request_type,
             transport_type,
             data_length: b[5],
         })
@@ -401,7 +405,7 @@ impl Packet {
         Ok(Self {
             header: Header {
                 command,
-                request_type: RequestType::Request,
+                packet_status: PacketStatus::Request,
                 transport_type: transport_type,
                 data_length,
             },

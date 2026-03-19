@@ -15,19 +15,15 @@ else()
     add_compile_options(-O2)
 endif()
 
-# --------------------------------------------------------------------------
-# Dependencies
-# --------------------------------------------------------------------------
-
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIBUSB REQUIRED libusb-1.0)
 
 # BlueZ / libbluetooth (for raw HCI / L2CAP ATT sockets)
 find_library(BLUETOOTH_LIB bluetooth REQUIRED)
 
-# --------------------------------------------------------------------------
-# Transport static library
-# --------------------------------------------------------------------------
+find_library(PULSEAUDIO_LIB pulse REQUIRED)
+find_library(PULSEAUDIO_SIMPLE_LIB pulse-simple REQUIRED)
+
 
 add_library(sw2_transport STATIC
     src/transport_usb.c
@@ -44,13 +40,9 @@ target_link_libraries(sw2_transport
     PRIVATE ${BLUETOOTH_LIB}
 )
 
-# --------------------------------------------------------------------------
-# Minimal smoke-test binary  (optional, remove when building as a subdir)
-# --------------------------------------------------------------------------
-
 option(SW2_BUILD_TOOLS "Build the sw2ctl test tool" ON)
 
 if(SW2_BUILD_TOOLS)
     add_executable(sw2ctl tools/sw2ctl.c)
-    target_link_libraries(sw2ctl PRIVATE sw2_transport)
+    target_link_libraries(sw2ctl PRIVATE sw2_transport PRIVATE ${PULSEAUDIO_LIB} PRIVATE ${PULSEAUDIO_SIMPLE_LIB})
 endif()

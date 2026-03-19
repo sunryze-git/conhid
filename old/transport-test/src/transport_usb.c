@@ -1,13 +1,3 @@
-/*
- * transport_usb.c -- USB transport via libusb-1.0
- *
- * Switch 2 controllers expose a standard USB HID interface. Commands are
- * sent as interrupt-OUT transfers on the HID endpoint; responses arrive as
- * interrupt-IN transfers on the same interface.
- *
- * Build with:  gcc -o ... transport_usb.c $(pkg-config --cflags --libs libusb-1.0)
- */
-
 #include "transport.h"
 
 #include <libusb-1.0/libusb.h>
@@ -15,14 +5,7 @@
 #include <string.h>
 #include <stdio.h>
 
-/* -------------------------------------------------------------------------
- * Nintendo / Switch 2 USB identifiers
- * ------------------------------------------------------------------------- */
-
 #define NINTENDO_VID        0x057E
-
-/* All known Switch 2 controller product IDs.
- * The spec notes product IDs for Switch 2 begin at 0x2060.            */
 static const uint16_t SW2_PIDS[] = {
     0x2060,  /* Pro Controller 2   */
     0x2066,  /* JoyCon (L) 2       */
@@ -32,15 +15,10 @@ static const uint16_t SW2_PIDS[] = {
     0x0000   /* sentinel           */
 };
 
-/* HID interface / endpoint configuration                               */
 #define HID_INTERFACE           0
 #define HID_EP_OUT              0x02    /* Interrupt OUT -- host -> device */
 #define HID_EP_IN               0x81    /* Interrupt IN  -- device -> host */
 #define HID_EP_PACKET_SIZE      64
-
-/* -------------------------------------------------------------------------
- * Private state
- * ------------------------------------------------------------------------- */
 
 typedef struct {
     libusb_context        *ctx;
@@ -48,20 +26,14 @@ typedef struct {
     int                    kernel_driver_detached;
 } usb_priv_t;
 
-/* -------------------------------------------------------------------------
- * vtable implementations
- * ------------------------------------------------------------------------- */
-
 static int usb_send(transport_t *t, const uint8_t *buf, size_t len)
 {
     usb_priv_t *p = (usb_priv_t *)t->priv;
     int transferred = 0;
 
-    if (!p || !p->dev)
-        return TRANSPORT_ERR_CLOSED;
+    if (!p || !p->dev) return TRANSPORT_ERR_CLOSED;
 
-    if (len > TRANSPORT_MTU)
-        return TRANSPORT_ERR_PARAM;
+    if (len > TRANSPORT_MTU) return TRANSPORT_ERR_PARAM;
 
     /* libusb requires a non-const pointer; the transfer does not modify buf */
     int rc = libusb_bulk_transfer(p->dev,
@@ -83,11 +55,9 @@ static int usb_recv(transport_t *t, uint8_t *buf, size_t len, int timeout_ms, ui
     usb_priv_t *p = (usb_priv_t *)t->priv;
     int transferred = 0;
 
-    if (!p || !p->dev)
-        return TRANSPORT_ERR_CLOSED;
+    if (!p || !p->dev) return TRANSPORT_ERR_CLOSED;
 
-    if (len > TRANSPORT_MTU)
-        return TRANSPORT_ERR_PARAM;
+    if (len > TRANSPORT_MTU) return TRANSPORT_ERR_PARAM;
 
     int rc = libusb_interrupt_transfer(p->dev,
                                        HID_EP_IN,
@@ -95,8 +65,7 @@ static int usb_recv(transport_t *t, uint8_t *buf, size_t len, int timeout_ms, ui
                                        (int)len,
                                        &transferred,
                                        timeout_ms);
-    if (rc == LIBUSB_ERROR_TIMEOUT)
-        return TRANSPORT_ERR_TIMEOUT;
+    if (rc == LIBUSB_ERROR_TIMEOUT) return TRANSPORT_ERR_TIMEOUT;
 
     if (rc != LIBUSB_SUCCESS) {
         fprintf(stderr, "[usb] recv error: %s\n", libusb_strerror(rc));
@@ -113,26 +82,18 @@ static void usb_close(transport_t *t)
     if (p) {
         if (p->dev) {
             libusb_release_interface(p->dev, HID_INTERFACE);
-            if (p->kernel_driver_detached)
-                libusb_attach_kernel_driver(p->dev, HID_INTERFACE);
+            if (p->kernel_driver_detached) libusb_attach_kernel_driver(p->dev, HID_INTERFACE);
             libusb_close(p->dev);
         }
-        if (p->ctx)
-            libusb_exit(p->ctx);
+        if (p->ctx) libusb_exit(p->ctx);
         free(p);
     }
     free(t);
 }
 
-/* -------------------------------------------------------------------------
- * Public: usb_transport_open
- * ------------------------------------------------------------------------- */
-
 static int is_sw2_pid(uint16_t pid)
 {
-    for (int i = 0; SW2_PIDS[i] != 0x0000; i++)
-        if (SW2_PIDS[i] == pid)
-            return 1;
+    for (int i = 0; SW2_PIDS[i] != 0x0000; i++) if (SW2_PIDS[i] == pid) return 1;
     return 0;
 }
 
@@ -161,8 +122,7 @@ transport_t *usb_transport_open(uint16_t vid, uint16_t pid)
         if (cnt >= 0) {
             for (ssize_t i = 0; i < cnt && !priv->dev; i++) {
                 struct libusb_device_descriptor desc;
-                if (libusb_get_device_descriptor(list[i], &desc) < 0)
-                    continue;
+                if (libusb_get_device_descriptor(list[i], &desc) < 0) continue;
                 if (desc.idVendor == vid && is_sw2_pid(desc.idProduct)) {
                     libusb_open(list[i], &priv->dev);
                     pid = desc.idProduct;
@@ -173,8 +133,7 @@ transport_t *usb_transport_open(uint16_t vid, uint16_t pid)
     }
 
     if (!priv->dev) {
-        fprintf(stderr, "[usb] no Switch 2 controller found (VID=%04x PID=%04x)\n",
-                vid, pid);
+        fprintf(stderr, "[usb] no Switch 2 controller found (VID=%04x PID=%04x)\n", vid, pid);
         goto fail;
     }
 
@@ -197,7 +156,6 @@ transport_t *usb_transport_open(uint16_t vid, uint16_t pid)
         goto fail;
     }
 
-    /* Wire up vtable ------------------------------------------------------ */
     t->send  = usb_send;
     t->recv  = usb_recv;
     t->close = usb_close;

@@ -1,11 +1,17 @@
 #include "../src/transport.h"
-#include "../src/commands.h"
+#include "../src/command_definitions.h"
 #include "../src/responses.h"
 
 #include <asm-generic/errno.h>
+#include <bits/time.h>
+#include <pulse/def.h>
+#include <pulse/sample.h>
+#include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <time.h>
 #include <unistd.h>
 #include <poll.h>
 
@@ -54,13 +60,13 @@ static const Cmd init_cmds[] = {
     INIT_CMD_ENTRY(features_prepare_all),
     INIT_CMD_ENTRY(features_enable_all),
     INIT_CMD_ENTRY(get_battery_c),
-    INIT_CMD_ENTRY(get_battery_v)
+    INIT_CMD_ENTRY(get_battery_v),
 };
 #define NUM_INIT_CMDS (int)(sizeof(init_cmds) / sizeof(init_cmds[0]))
 
-static void print_command_response(resp_cmd_header header, uint8_t* resp) {
+static void print_command_response(resp_cmd_header* header, uint8_t* resp) {
     // FIRMWARE - GET VERSION
-    if (header.cmd_id == FIRMWARE_INFO && header.subcmd_id == FIRMWARE_GET_VERSION) {
+    if (header->id == FIRMWARE_INFO && header->sub_id == FIRMWARE_GET_VERSION) {
         resp_get_firmware_ver_info version;
         memcpy(&version, resp, sizeof(version));
 
@@ -72,7 +78,7 @@ static void print_command_response(resp_cmd_header header, uint8_t* resp) {
     }
 
     // BATTERY - GET VOLTAGE
-    if (header.cmd_id == BATTERY && header.subcmd_id == BATTERY_GET_VOLTAGE) {
+    if (header->id == BATTERY && header->sub_id == BATTERY_GET_VOLTAGE) {
         resp_get_battery_voltage volt;
         memcpy(&volt, resp, sizeof(volt));
         printf("[Battery Voltage]\n");
@@ -80,7 +86,7 @@ static void print_command_response(resp_cmd_header header, uint8_t* resp) {
     }
 
     // BATTERY - GET CHARGE
-    if (header.cmd_id == BATTERY && header.subcmd_id == BATTERY_GET_CHARGE) {
+    if (header->id == BATTERY && header->sub_id == BATTERY_GET_CHARGE) {
         resp_get_charge_status charge;
         memcpy(&charge, resp, sizeof(charge));
         printf("[Battery Charge Status]\n");
@@ -114,9 +120,8 @@ static void send_init_cmd(transport_t *t, int idx, const uint8_t *payload, int l
         return;
     }
 
-    resp_cmd_header header;
-    memcpy(&header, resp, sizeof(header));
-    printf(" << CMD ID: 0x%02X | DIR: 0x%02X | TRANSPORT: 0x%02X | SUB CMD: 0x%02X\n", header.cmd_id, header.direction, header.transport, header.subcmd_id);
+    resp_cmd_header* header = (resp_cmd_header*)resp;
+    printf(" << CMD ID: 0x%02X | DIR: 0x%02X | TRANSPORT: 0x%02X | SUB CMD: 0x%02X\n", header->id, header->direction, header->transport, header->sub_id);
 
     print_command_response(header, resp);
 }
@@ -124,19 +129,37 @@ static void send_init_cmd(transport_t *t, int idx, const uint8_t *payload, int l
 static void listen_loop(transport_t *t)
 {
     printf("\nListening for input reports (Ctrl+C to stop)...\n");
+
     uint8_t buf[TRANSPORT_MTU];
+    struct timespec ts;
+    
     while (1) {
-        int rc = t->recv(t, buf, sizeof(buf), 5000, 0x000A);
+        int rc = t->recv(t, buf, sizeof(buf), 5000, 0x002E);
+    
         if (rc == -ETIMEDOUT) {
             printf("  (no data)\n");
             continue;
         } else if (rc < 0) {
             fprintf(stderr, "recv error: %s\n", strerror(-rc));
             break;
+        } else if (rc == 0) {
+            fprintf(stderr, " data returned is 0 bytes\n");
         }
-        printf("NOTIFY: \n");
-        for (size_t i = 0; i < sizeof(buf); i++) printf("%02X ", buf[i]);
+    
+        clock_gettime(CLOCK_MONOTONIC, &ts);
+        printf("[%ld.%06ld]: NOTIFY: \n", ts.tv_sec, ts.tv_nsec / 1000);
+        
+        hid_ble_output_report_2E* packet = (hid_ble_output_report_2E*)buf;
+        for (size_t i = 0; i < sizeof(packet->data); i++) {
+            printf("%02X ", packet->data[i]);
+        }
         printf("\n");
+
+        // testing with if this is pcm audio data
+
+        // hid_output_report report;
+        // memcpy(&report, buf, sizeof(report));
+        // print_hid_report(&report);
     }
 }
 
@@ -173,7 +196,6 @@ int main(int argc, char *argv[])
     printf("\n[sw2ctl] Init complete.\n");
 
     listen_loop(t);
-
     t->close(t);
     printf("[sw2ctl] Transport closed.\n");
     return 0;

@@ -1,0 +1,12 @@
+[package]
+name = "transport-rust"
+version = "0.1.0"
+edition = "2024"
+
+[build-dependencies]
+cc = "1.2.57"
+
+[dependencies]
+midly = "0.5.3"
+rusb = "0.9.4"
+spin_sleep = "1.3.3"

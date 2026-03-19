@@ -3,14 +3,6 @@
 #include <stdint.h>
 #include <stddef.h>
 
-/*
- * transport.h -- Switch 2 controller transport abstraction
- *
- * Both USB (libusb) and BLE (BlueZ HCI) implement this interface identically.
- * All command code talks only to transport_t; it never calls libusb or BlueZ
- * directly.
- */
-
 /* Maximum raw packet size on the wire */
 #define TRANSPORT_MTU           0x100
 
@@ -57,36 +49,7 @@ struct transport {
     void    *priv;
 };
 
-/* -------------------------------------------------------------------------
- * USB transport  (transport_usb.c / libusb-1.0)
- * ------------------------------------------------------------------------- */
-
-/*
- * Open the first Switch 2 controller found on USB with the given VID/PID.
- * Pass 0 for both to use the default Nintendo VID (0x057E) and scan for any
- * known Switch 2 product ID (>= 0x2060).
- *
- * Returns a heap-allocated transport_t on success, NULL on failure.
- * The caller owns it and must call t->close(t) when done.
- */
 transport_t *usb_transport_open(uint16_t vid, uint16_t pid);
-
-/* -------------------------------------------------------------------------
- * BLE transport  (transport_ble.c / BlueZ HCI sockets)
- * ------------------------------------------------------------------------- */
-
-/*
- * Open a BLE transport to the controller at `mac_addr` (colon-separated,
- * e.g. "AA:BB:CC:DD:EE:FF").  The device must already be connected -- this
- * function does not perform scanning or GATT service discovery; it expects
- * the GATT handles to have been resolved beforehand and stored in the
- * ble_handles_t struct pointed to by `handles`.
- *
- * Passing NULL for `handles` uses the default handle layout from the
- * bluetooth_interface spec (Pro Controller 2 values).
- *
- * Returns a heap-allocated transport_t on success, NULL on failure.
- */
 typedef struct {
     uint16_t cmd_write;     /* Command write handle  (default 0x0016) */
     uint16_t cmd_resp1;     /* Response notify handle #1 (default 0x001A) */
@@ -94,12 +57,4 @@ typedef struct {
     uint16_t hid_input_ccc; /* CCC descriptor for HID input (default 0x000F) */
 } ble_handles_t;
 
-/*
- * mac_addr: controller Bluetooth address (e.g. "94:8E:6D:2C:A6:E2")
- * handles:  GATT handle layout, or NULL for Pro Controller 2 defaults
- *
- * The adapter is auto-detected via hci_get_route(). Run as root or with
- * CAP_NET_RAW. Stop bluetoothd first if it has claimed the adapter.
- */
-/* adapter_mac: PC Bluetooth adapter MAC (e.g. "CC:5E:F8:B2:53:00") */
 transport_t *ble_transport_open(const char *adapter_mac, const char *mac_addr, const ble_handles_t *handles);

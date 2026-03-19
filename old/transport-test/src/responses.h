@@ -2,12 +2,13 @@
 #pragma once
 #include <stdint.h>
 
+
 // COMMAND HEADERS
 typedef struct {
-    uint8_t cmd_id;
+    uint8_t id;
     uint8_t direction;
     uint8_t transport;
-    uint8_t subcmd_id;
+    uint8_t sub_id;
     uint8_t _reserved[0x4];
 } __attribute__((packed)) resp_cmd_header;
 
@@ -155,3 +156,42 @@ typedef struct {
     uint8_t _reserved;
     uint8_t device_key[0x10];
 } __attribute__((packed)) resp_exchange_keys; // cmd 0x04
+
+
+// HID RESPONSES
+
+typedef struct {
+    uint32_t counter;
+    uint32_t buttons; // bitfield
+    uint16_t _reserved1;
+    uint8_t left_stick[0x3]; // 12-bit packed
+    uint8_t right_stick[0x3]; 
+    uint16_t mouse_x;
+    uint16_t mouse_y;
+    uint16_t _mouse_unknown;
+    uint16_t mouse_dist;
+    uint8_t _reserved2;
+    uint16_t mag_x;
+    uint16_t mag_y;
+    uint16_t mag_z;
+    uint16_t battery_voltage;
+    uint8_t  battery_chrg_rate;
+    int16_t battery_current;
+    uint8_t  _reserved3[0x6];
+    int32_t motion_timestamp;
+    int16_t motion_temperature;
+    int16_t motion_accel_x;
+    int16_t motion_accel_y;
+    int16_t motion_accel_z;
+    int16_t motion_gyro_x;
+    int16_t motion_gyro_y;
+    int16_t motion_gyro_z;
+    uint8_t  left_analog_trigger;
+    uint8_t  right_analog_trigger;
+    uint8_t  reserved4;
+} __attribute__((packed)) hid_output_report_05;
+
+typedef struct {
+    uint8_t header[15];
+    uint8_t data[50];
+} __attribute__((packed)) hid_ble_output_report_2E;

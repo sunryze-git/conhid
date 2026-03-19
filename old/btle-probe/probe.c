@@ -77,12 +77,6 @@ static const uint8_t c21[]      = {CMD_18,REQUEST_MARKER,COMM_BLE,CMD_18_UNKNOWN
 static const uint8_t c22[]      = {INIT,REQUEST_MARKER,COMM_BLE,INIT_WAKE_CONSOLE,0x00,0x00,0x00};
 static const uint8_t c23[]      = {HAPTICS,REQUEST_MARKER,COMM_BLE,VIBRATION_PLAY_SAMPLE,0x00,0x04,0x00,0x00,0x03,0x00,0x00};
 
-// Enable Player 1 LED
-static const uint8_t c24[]      = {LED,REQUEST_MARKER,COMM_BLE,LED_SET_PATTERN,0x00,0x08,0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
-
-// Play Haptics Connect Sound
-static const uint8_t c25[]      = {HAPTICS,REQUEST_MARKER,COMM_BLE,VIBRATION_PLAY_SAMPLE,0x00,0x08,0x00,0x00, VIBRATION_PAIRING,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
-
 static const Cmd init_cmds[] = {
     {c00,sizeof(c00)},{c01,sizeof(c01)},{c02,sizeof(c02)},{c03,sizeof(c03)},
     {c04,sizeof(c04)},{c05,sizeof(c05)},{c06,sizeof(c06)},{c07,sizeof(c07)},
@@ -90,7 +84,6 @@ static const Cmd init_cmds[] = {
     {c12,sizeof(c12)},{c13,sizeof(c13)},{c14,sizeof(c14)},{c15,sizeof(c15)},
     {c16,sizeof(c16)},{c17,sizeof(c17)},{c18,sizeof(c18)},{c19,sizeof(c19)},
     {c20,sizeof(c20)},{c21,sizeof(c21)},{c22,sizeof(c22)},{c23,sizeof(c23)},
-    {c24,sizeof(c24)},{c25,sizeof(c25)}
 };
 #define NUM_CMDS (sizeof(init_cmds) / sizeof(init_cmds[0]))
 

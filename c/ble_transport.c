@@ -1,5 +1,5 @@
-#include "commands.h"
-#include "transport.h"
+#include "ble_transport.h"
+#include "command_definitions.h"
 
 #include <asm-generic/errno.h>
 #include <bluetooth/bluetooth.h>
@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
 #include <sys/select.h>
 
@@ -49,7 +50,7 @@ static void drain(int sock)
 
 static int enable_notifications(int sock) {
     uint16_t cccd_handles[] = {
-        INPUT_REPORT_1, OUTPUT_REPORT_05
+        INPUT_REPORT_1, 0x002F
     };
 
     for (size_t i = 0; i < sizeof(cccd_handles) / sizeof(cccd_handles[0]); i++) {
@@ -113,7 +114,7 @@ static int connect_att(const char *adapter_mac, const char *controller_mac)
     return sock;
 }
 
-static int ble_send(transport_t *t, const uint8_t *buf, size_t len)
+int ble_transport_send(transport_t *t, const uint8_t *buf, size_t len)
 {
     ble_priv_t *p = (ble_priv_t *)t->priv;
     if (!p || p->att_fd < 0) return -ESHUTDOWN;
@@ -131,7 +132,7 @@ static int ble_send(transport_t *t, const uint8_t *buf, size_t len)
 }
 
 // Recieve Data from the transport. Returns size of data, or -1 if IO error.
-static int ble_recv(transport_t *t, uint8_t *buf, size_t len, int timeout_ms, uint16_t expected_handle)
+int ble_transport_recv(transport_t *t, uint8_t *buf, size_t len, int timeout_ms, uint16_t expected_handle)
 {
     ble_priv_t *p = (ble_priv_t *)t->priv;
     if (!p || p->att_fd < 0) return -ESHUTDOWN;
@@ -156,7 +157,6 @@ static int ble_recv(transport_t *t, uint8_t *buf, size_t len, int timeout_ms, ui
         if (raw[0] == ATT_OP_HANDLE_NOTIFY && n >= 3) {
             uint16_t h = raw[1] | (raw[2] << 8);
             if (h == expected_handle) {
-                printf("[CMD Response: 0x%04X]", h);
                 size_t payload_len = (size_t)(n-3);
                 if (payload_len > len) payload_len = len;
                 memcpy(buf, &raw[3], payload_len);
@@ -168,7 +168,7 @@ static int ble_recv(transport_t *t, uint8_t *buf, size_t len, int timeout_ms, ui
     return -ETIMEDOUT;
 }
 
-static void ble_close(transport_t *t)
+void ble_transport_close(transport_t *t)
 {
     ble_priv_t *p = (ble_priv_t *)t->priv;
     if (p) {
@@ -196,9 +196,9 @@ transport_t *ble_transport_open(const char *adapter_mac, const char *mac_addr, c
 
     drain(priv->att_fd);
 
-    t->send  = ble_send;
-    t->recv  = ble_recv;
-    t->close = ble_close;
+    t->send  = ble_transport_send;
+    t->recv  = ble_transport_recv;
+    t->close = ble_transport_close;
     t->type  = TRANSPORT_TYPE_BLE;
     t->priv  = priv;
     return t;

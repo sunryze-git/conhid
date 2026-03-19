@@ -35,11 +35,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     loop {
         match controller.get_input() {
-            Ok(n) => {
-                //println!("[sw2ctl] HID data: {:02X?} ", &buf[1..n]);
-
-                //
-            }
+            Ok(n) => {}
             Err(e) => {
                 eprintln!("[sw2ctl] HID read error, {e}")
             }

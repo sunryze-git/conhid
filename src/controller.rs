@@ -1,8 +1,10 @@
 use crate::packet::*;
-use crate::report_05::{InputReport, ParseError};
+use crate::report::{InputReport, ParseError};
 use crate::transport::Transport;
 use crate::transport::ble::{BleHandles, BleTransport};
 use crate::transport::usb::UsbTransport;
+
+const REPORT_TYPE: u8 = 0x05;
 
 pub struct Controller {
     transport: Box<dyn Transport>,
@@ -65,6 +67,16 @@ impl Controller {
                 vec![0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
             )?,
             Packet::new(
+                Command::Features(FeaturesSubCmd::SetMask),
+                kind,
+                vec![0x27, 0x00, 0x00, 0x00],
+            )?,
+            Packet::new(
+                Command::Features(FeaturesSubCmd::Enable),
+                kind,
+                vec![0x27, 0x00, 0x00, 0x00],
+            )?,
+            Packet::new(
                 Command::Haptics(HapticsSubCmd::PlaySample),
                 kind,
                 vec![0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],
@@ -73,18 +85,9 @@ impl Controller {
             Packet::new(
                 Command::Init(InitSubCmd::InputReport),
                 kind,
-                vec![0x05, 0x00, 0x00, 0x00],
+                vec![REPORT_TYPE, 0x00, 0x00, 0x00],
             )?,
-            Packet::new(
-                Command::Features(FeaturesSubCmd::SetMask),
-                kind,
-                vec![0xFF, 0x00, 0x00, 0x00],
-            )?,
-            Packet::new(
-                Command::Features(FeaturesSubCmd::Enable),
-                kind,
-                vec![0xFF, 0x00, 0x00, 0x00],
-            )?,
+            Packet::new(Command::Cmd18(Cmd18SubCmd::Unknown01), kind, vec![])?,
         ])
     }
 
@@ -101,7 +104,26 @@ impl Controller {
 
     pub fn get_input(&self) -> std::result::Result<InputReport, ParseError> {
         let resp = self.transport.recv_hid()?;
-        InputReport::from_bytes(&resp.payload[..resp.len])
+        // clearscreen::clear().expect("bad");
+        // println!("{:02X?}", &resp.payload[20..20 + 24]);
+
+        // let start = 20;
+        // let section = &resp.payload[start..start + 24];
+
+        // let ints: Vec<i32> = section
+        //     .chunks(4)
+        //     .map(|c| i32::from_le_bytes(c.try_into().unwrap()))
+        //     .collect();
+
+        // println!("6 x u32 from the section:");
+        // for (i, val) in ints.iter().enumerate() {
+        //     println!("  [{i}] 0x{val:08X}  ({val})");
+        // }
+
+        match self.transport_kind {
+            TransportType::Usb => InputReport::from_bytes(&resp.payload[1..resp.len]),
+            TransportType::Ble => InputReport::from_bytes(&resp.payload[..resp.len]),
+        }
     }
 
     pub fn do_rumble(&self, seq: &mut u8, rumble: &HdRumble) -> std::io::Result<()> {

@@ -158,7 +158,11 @@ fn exchange_mtu(sock: &AttSocket) -> io::Result<()> {
 }
 
 fn enable_notifications(sock: &AttSocket, handles: &BleHandles) -> io::Result<()> {
-    for &handle in &[INPUT_REPORT_1, CCCD_NOTIFY, handles.hid_input + 1] {
+    for &handle in &[
+        handles.cmd_write + 1,
+        handles.cmd_resp + 1,
+        handles.hid_input + 1,
+    ] {
         sock.write_all(&[
             ATT_OP_WRITE_REQ,
             (handle & 0xFF) as u8,

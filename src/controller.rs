@@ -4,6 +4,7 @@ use crate::transport::Transport;
 use crate::transport::ble::{BleHandles, BleTransport};
 use crate::transport::usb::UsbTransport;
 
+// Specify the report ID to get back. This currently only works on USB.
 const REPORT_TYPE: u8 = 0x05;
 
 pub struct Controller {
@@ -104,22 +105,6 @@ impl Controller {
 
     pub fn get_input(&self) -> std::result::Result<InputReport, ParseError> {
         let resp = self.transport.recv_hid()?;
-        // clearscreen::clear().expect("bad");
-        // println!("{:02X?}", &resp.payload[20..20 + 24]);
-
-        // let start = 20;
-        // let section = &resp.payload[start..start + 24];
-
-        // let ints: Vec<i32> = section
-        //     .chunks(4)
-        //     .map(|c| i32::from_le_bytes(c.try_into().unwrap()))
-        //     .collect();
-
-        // println!("6 x u32 from the section:");
-        // for (i, val) in ints.iter().enumerate() {
-        //     println!("  [{i}] 0x{val:08X}  ({val})");
-        // }
-
         match self.transport_kind {
             TransportType::Usb => InputReport::from_bytes(&resp.payload[1..resp.len]),
             TransportType::Ble => InputReport::from_bytes(&resp.payload[..resp.len]),

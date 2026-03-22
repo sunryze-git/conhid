@@ -9,8 +9,6 @@ pub fn create_virtual_controller() -> Result<VirtualDevice, Box<dyn std::error::
     keys.insert(KeyCode::BTN_WEST);
     keys.insert(KeyCode::BTN_TL);
     keys.insert(KeyCode::BTN_TR);
-    keys.insert(KeyCode::BTN_TL2);
-    keys.insert(KeyCode::BTN_TR2);
     keys.insert(KeyCode::BTN_SELECT);
     keys.insert(KeyCode::BTN_START);
     keys.insert(KeyCode::BTN_THUMBL);
@@ -62,30 +60,30 @@ pub fn create_virtual_controller() -> Result<VirtualDevice, Box<dyn std::error::
             AbsoluteAxisCode::ABS_HAT0Y,
             abs_setup(-1, 1, 0, 0),
         ))?
-        .with_absolute_axis(&UinputAbsSetup::new(
-            AbsoluteAxisCode::ABS_TILT_X,
-            abs_setup(-32767, 32767, 0, 0),
-        ))?
-        .with_absolute_axis(&UinputAbsSetup::new(
-            AbsoluteAxisCode::ABS_TILT_Y,
-            abs_setup(-32767, 32767, 0, 0),
-        ))?
-        .with_absolute_axis(&UinputAbsSetup::new(
-            AbsoluteAxisCode::ABS_MISC,
-            abs_setup(-32767, 32767, 0, 0),
-        ))?
-        .with_absolute_axis(&UinputAbsSetup::new(
-            AbsoluteAxisCode::ABS_BRAKE,
-            abs_setup(-32767, 32767, 0, 0),
-        ))?
-        .with_absolute_axis(&UinputAbsSetup::new(
-            AbsoluteAxisCode::ABS_GAS,
-            abs_setup(-32767, 32767, 0, 0),
-        ))?
-        .with_absolute_axis(&UinputAbsSetup::new(
-            AbsoluteAxisCode::ABS_WHEEL,
-            abs_setup(-32767, 32767, 0, 0),
-        ))?
+        // .with_absolute_axis(&UinputAbsSetup::new(
+        //     AbsoluteAxisCode::ABS_TILT_X,
+        //     abs_setup(-32767, 32767, 0, 0),
+        // ))?
+        // .with_absolute_axis(&UinputAbsSetup::new(
+        //     AbsoluteAxisCode::ABS_TILT_Y,
+        //     abs_setup(-32767, 32767, 0, 0),
+        // ))?
+        // .with_absolute_axis(&UinputAbsSetup::new(
+        //     AbsoluteAxisCode::ABS_MISC,
+        //     abs_setup(-32767, 32767, 0, 0),
+        // ))?
+        // .with_absolute_axis(&UinputAbsSetup::new(
+        //     AbsoluteAxisCode::ABS_BRAKE,
+        //     abs_setup(-32767, 32767, 0, 0),
+        // ))?
+        // .with_absolute_axis(&UinputAbsSetup::new(
+        //     AbsoluteAxisCode::ABS_GAS,
+        //     abs_setup(-32767, 32767, 0, 0),
+        // ))?
+        // .with_absolute_axis(&UinputAbsSetup::new(
+        //     AbsoluteAxisCode::ABS_WHEEL,
+        //     abs_setup(-32767, 32767, 0, 0),
+        // ))?
         .with_ff_effects_max(16)
         .build()?;
 

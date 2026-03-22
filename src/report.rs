@@ -228,8 +228,6 @@ impl InputReport {
             (KeyCode::BTN_WEST, b.y),
             (KeyCode::BTN_TL, b.l),
             (KeyCode::BTN_TR, b.r),
-            (KeyCode::BTN_TL2, b.zl),
-            (KeyCode::BTN_TR2, b.zr),
             (KeyCode::BTN_SELECT, b.minus),
             (KeyCode::BTN_START, b.plus),
             (KeyCode::BTN_THUMBL, b.left_stick),
@@ -285,47 +283,14 @@ impl InputReport {
         events.push(InputEvent::new(
             EventType::ABSOLUTE.0,
             AbsoluteAxisCode::ABS_Z.0,
-            self.left_trigger as i32,
+            if self.buttons.zl { 255 } else { 0 },
         ));
         events.push(InputEvent::new(
             EventType::ABSOLUTE.0,
             AbsoluteAxisCode::ABS_RZ.0,
-            self.right_trigger as i32,
+            if self.buttons.zr { 255 } else { 0 },
         ));
 
-        let m = &self.motion;
-        events.push(InputEvent::new(
-            EventType::ABSOLUTE.0,
-            AbsoluteAxisCode::ABS_TILT_X.0,
-            m.gyro_x as i32,
-        ));
-        events.push(InputEvent::new(
-            EventType::ABSOLUTE.0,
-            AbsoluteAxisCode::ABS_TILT_Y.0,
-            m.gyro_y as i32,
-        ));
-        events.push(InputEvent::new(
-            EventType::ABSOLUTE.0,
-            AbsoluteAxisCode::ABS_MISC.0,
-            m.gyro_z as i32,
-        ));
-        events.push(InputEvent::new(
-            EventType::ABSOLUTE.0,
-            AbsoluteAxisCode::ABS_BRAKE.0,
-            m.accel_x as i32,
-        ));
-        events.push(InputEvent::new(
-            EventType::ABSOLUTE.0,
-            AbsoluteAxisCode::ABS_GAS.0,
-            m.accel_y as i32,
-        ));
-        events.push(InputEvent::new(
-            EventType::ABSOLUTE.0,
-            AbsoluteAxisCode::ABS_WHEEL.0,
-            m.accel_z as i32,
-        ));
-
-        // Flush
         events.push(InputEvent::new(EventType::SYNCHRONIZATION.0, 0, 0));
 
         device.emit(&events)?;

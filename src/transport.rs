@@ -10,7 +10,7 @@ pub struct TransportData {
     pub len: usize,
 }
 
-pub trait Transport {
+pub trait Transport: Send {
     fn send_command(&self, buf: &[u8]) -> std::io::Result<()>;
     fn recv_response(&self) -> std::io::Result<TransportData>;
     fn recv_hid(&self) -> std::io::Result<TransportData>;

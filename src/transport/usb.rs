@@ -1,6 +1,8 @@
 use super::Transport;
 use crate::transport::{TRANSPORT_MTU, TRANSPORT_TIMEOUT, TransportData};
 use rusb::{DeviceHandle, GlobalContext};
+use std::collections::VecDeque;
+use std::sync::Mutex;
 use std::time::Duration;
 
 const NINTENDO_VID: u16 = 0x057E;
@@ -25,6 +27,7 @@ const HID_OUT: u8 = 0x01;
 pub struct UsbTransport {
     handle: DeviceHandle<GlobalContext>,
     kernel_driver_attached: [bool; 2],
+    pending: Mutex<VecDeque<TransportData>>,
 }
 
 impl UsbTransport {
@@ -59,6 +62,7 @@ impl UsbTransport {
                 return Ok(UsbTransport {
                     handle,
                     kernel_driver_attached,
+                    pending: Mutex::default(),
                 });
             }
         }
@@ -94,6 +98,14 @@ impl Transport for UsbTransport {
     }
 
     fn recv_hid(&self) -> Result<TransportData, std::io::Error> {
+        // Return the pending report, if there is one
+        {
+            let mut pending = self.pending.lock().unwrap();
+            if let Some(data) = pending.pop_front() {
+                return Ok(data);
+            }
+        }
+
         let mut buf = [0u8; TRANSPORT_MTU];
         let bytes_read = self
             .handle
@@ -104,9 +116,19 @@ impl Transport for UsbTransport {
             )
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
 
+        // split into 64-byte reports
+        let mut pending = self.pending.lock().unwrap();
+        let mut offset = 64; // first report returned directly below
+        while offset + 64 <= bytes_read {
+            let mut payload = [0u8; TRANSPORT_MTU];
+            payload[..64].copy_from_slice(&buf[offset..offset + 64]);
+            pending.push_back(TransportData { payload, len: 64 });
+            offset += 64;
+        }
+
         Ok(TransportData {
             payload: buf,
-            len: bytes_read,
+            len: 64, // always exactly one report
         })
     }
 

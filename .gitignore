@@ -2,4 +2,5 @@
 **/build/
 **/target/
 src/slimeinterface.rs
-old/**
+**/old/**
+src/visualizer.rs

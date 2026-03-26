@@ -14,8 +14,8 @@ pub struct InputReport {
     pub charging_state: u8,
     pub battery_current: u16,
     pub motion: MotionData,
-    pub left_trigger: u8,
-    pub right_trigger: u8,
+    pub left_trigger: u8,  // used on GC
+    pub right_trigger: u8, // used on GC
 }
 
 pub struct Buttons {
@@ -111,17 +111,17 @@ impl MouseData {
 }
 
 pub struct MagData {
-    pub x: i16,
-    pub y: i16,
-    pub z: i16,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
 }
 
 impl MagData {
     fn from_bytes(b: &[u8; 6]) -> Self {
         Self {
-            x: i16::from_le_bytes([b[0], b[1]]),
-            y: i16::from_le_bytes([b[2], b[3]]),
-            z: i16::from_le_bytes([b[4], b[5]]),
+            x: i16::from_le_bytes([b[0], b[1]]) as f64,
+            y: i16::from_le_bytes([b[2], b[3]]) as f64,
+            z: i16::from_le_bytes([b[4], b[5]]) as f64,
         }
     }
 }
@@ -129,12 +129,12 @@ impl MagData {
 pub struct MotionData {
     pub timestamp: u32,
     temperature: i16,
-    pub accel_x: i16,
-    pub accel_y: i16,
-    pub accel_z: i16,
-    pub gyro_x: i16,
-    pub gyro_y: i16,
-    pub gyro_z: i16,
+    pub accel_x: f64,
+    pub accel_y: f64,
+    pub accel_z: f64,
+    pub gyro_x: f64,
+    pub gyro_y: f64,
+    pub gyro_z: f64,
 }
 
 impl MotionData {
@@ -142,23 +142,18 @@ impl MotionData {
         Self {
             timestamp: u32::from_le_bytes([b[0], b[1], b[2], b[3]]),
             temperature: i16::from_le_bytes([b[4], b[5]]),
-            accel_x: i16::from_le_bytes([b[6], b[7]]),
-            accel_y: i16::from_le_bytes([b[8], b[9]]),
-            accel_z: i16::from_le_bytes([b[10], b[11]]),
-            gyro_x: i16::from_le_bytes([b[12], b[13]]),
-            gyro_y: i16::from_le_bytes([b[14], b[15]]),
-            gyro_z: i16::from_le_bytes([b[16], b[17]]),
+            accel_x: i16::from_le_bytes([b[6], b[7]]) as f64,
+            accel_y: i16::from_le_bytes([b[8], b[9]]) as f64,
+            accel_z: i16::from_le_bytes([b[10], b[11]]) as f64,
+            gyro_x: i16::from_le_bytes([b[12], b[13]]) as f64,
+            gyro_y: i16::from_le_bytes([b[14], b[15]]) as f64,
+            gyro_z: i16::from_le_bytes([b[16], b[17]]) as f64,
         }
     }
 
     /// Returns temperature in Celsius
     pub fn temperature(&self) -> f64 {
         25f64 + (self.temperature as f64 / 127.0)
-    }
-
-    /// Returns a filtered quaternion
-    pub fn to_quat() {
-        todo!()
     }
 }
 
@@ -218,7 +213,7 @@ impl InputReport {
         &self,
         device: &mut VirtualDevice,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut events: Vec<InputEvent> = Vec::new();
+        let mut events: Vec<InputEvent> = Vec::with_capacity(28);
 
         let b = &self.buttons;
         let btn_map: &[(KeyCode, bool)] = &[

@@ -2,7 +2,7 @@ pub mod ble;
 pub mod usb;
 
 // Constants
-pub const TRANSPORT_MTU: usize = 256;
+pub const TRANSPORT_MTU: usize = 64;
 pub const TRANSPORT_TIMEOUT: u64 = 500;
 
 pub struct TransportData {

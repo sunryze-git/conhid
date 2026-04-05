@@ -4,7 +4,7 @@ mod report;
 mod transport;
 mod virtualdevice;
 
-use std::thread;
+use std::{thread, time::Duration};
 
 use crate::{controller::Controller, virtualdevice::create_virtual_controller};
 
@@ -98,16 +98,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let handle = thread::Builder::new().name(label.clone()).spawn(move || {
             loop {
-                match controller.get_input() {
-                    Ok(n) => {
-                        let _ = controller.update_orientation(&n.motion, &n.magnetometer);
-
-                        if let Err(e) = n.emit_to_device(&mut vdevice) {
-                            eprintln!("[{label}] emit error: {e}");
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[{label}] HID read error: {e}");
+                controller.wait_for_input();
+                while let Some(n) = controller.get_input() {
+                    let _ = controller.update_orientation(&n.motion, &n.magnetometer);
+                    if let Err(e) = n.emit_to_device(&mut vdevice) {
+                        eprintln!("[{label}] emit error: {e}");
                     }
                 }
             }
@@ -117,11 +112,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     for handle in handles {
-        match handle.join() {
-            Err(e) => {
-                eprintln!("[sw2ctl] A controller thread panicked: {e:?}");
-            }
-            _ => (),
+        if let Err(e) = handle.join() {
+            eprintln!("[sw2ctl] A controller thread panicked: {e:?}");
         }
     }
 

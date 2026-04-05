@@ -1,4 +1,11 @@
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Condvar, Mutex};
+use std::thread::{self, JoinHandle};
+use std::time::Instant;
+
 use nalgebra::{UnitQuaternion, Vector3};
+use ringbuf::traits::{Consumer, Producer, Split};
+use ringbuf::{HeapCons, HeapProd, HeapRb};
 
 use crate::packet::*;
 use crate::report::{InputReport, MagData, MotionData, ParseError};
@@ -9,16 +16,23 @@ use crate::transport::usb::UsbTransport;
 // Specify the report ID to get back. This currently only works on USB.
 const REPORT_TYPE: u8 = 0x05;
 
+const BUFFER_CAPACITY: usize = 64;
+
 use vqf_rs::{Params, VQF};
 
 pub struct Controller {
-    transport: Box<dyn Transport>,
     transport_kind: TransportType,
     vqf: VQF,
     previous_time: Option<u32>,
     sample_count: u128,
     pub device_info: DeviceInfo,
     pub controller_type: ControllerType,
+
+    poll_thread: JoinHandle<()>,
+    consumer: HeapCons<InputReport>,
+    rumble_tx: Sender<[u8; 64]>,
+    rumble_seq: u8,
+    signal: Arc<(Mutex<bool>, Condvar)>,
 }
 
 #[derive(Debug, Default)]
@@ -123,14 +137,6 @@ impl Controller {
         Self::init(Box::new(transport), TransportType::Ble)
     }
 
-    pub fn get_input(&self) -> std::result::Result<InputReport, ParseError> {
-        let resp = self.transport.recv_hid()?;
-        match self.transport_kind {
-            TransportType::Usb => InputReport::from_bytes(&resp.payload[1..resp.len]),
-            TransportType::Ble => InputReport::from_bytes(&resp.payload[..resp.len]),
-        }
-    }
-
     // Different controller types seem to have different timestamp scales.
     fn micros_per_tick(&self) -> f64 {
         match self.controller_type {
@@ -189,7 +195,7 @@ impl Controller {
         ];
 
         // Produces magnetometer data in microTesla
-        let mag = [
+        let _mag = [
             magnetometer.x * MAG_SCALE,
             magnetometer.y * MAG_SCALE,
             magnetometer.z * MAG_SCALE,
@@ -208,10 +214,9 @@ impl Controller {
         Ok(unit_quat)
     }
 
-    pub fn do_rumble(&self, seq: &mut u8, rumble: &HdRumble) -> std::io::Result<()> {
+    pub fn do_rumble(&mut self, seq: &mut u8, rumble: &HdRumble) -> std::io::Result<()> {
         let mut data = [0u8; 64];
         let seq_nibble = *seq & 0x0F;
-
         data[0] = 0x02;
 
         match self.controller_type {
@@ -245,27 +250,38 @@ impl Controller {
 
         *seq = seq.wrapping_add(1) & 0x0F;
 
-        self.transport.send_hid_cmd(&data)
+        self.rumble_seq = self.rumble_seq.wrapping_add(1) & 0x0F;
+        self.rumble_tx
+            .send(data)
+            .map_err(|_| std::io::Error::other("Poll thread disconnected"))
     }
 
-    fn request(&self, packet: Packet) -> std::io::Result<Packet> {
-        self.transport.send_command(&packet.to_bytes())?;
-        let resp = self.transport.recv_response()?;
-        Packet::from_response(&resp.payload[..resp.len])
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))
+    pub fn get_input(&mut self) -> Option<InputReport> {
+        self.consumer.try_pop()
     }
 
-    fn run_sequence(&self, packets: Vec<Packet>) -> std::io::Result<()> {
-        for packet in packets {
-            println!("[sw2ctl] [REQUEST ] {packet:?} {:02X?}", packet.to_bytes());
-            let resp = self.request(packet)?;
-            println!("[sw2ctl] [RESPONSE] {resp:?} {:02X?}", resp.to_bytes());
+    pub fn wait_for_input(&self) {
+        let (lock, cvar) = &*self.signal;
+        let mut ready = lock.lock().unwrap();
+
+        while !*ready {
+            ready = cvar.wait(ready).unwrap();
         }
-        Ok(())
+        *ready = false;
     }
 
-    fn read_device_info(&mut self) -> std::io::Result<DeviceInfo> {
+    fn read_device_info(
+        transport: &dyn Transport,
+        kind: TransportType,
+    ) -> std::io::Result<(DeviceInfo, ControllerType)> {
         let mut info = DeviceInfo::default();
+
+        let request = |packet: Packet| -> std::io::Result<Packet> {
+            transport.send_command(&packet.to_bytes())?;
+            let resp = transport.recv_response()?;
+            Packet::from_response(&resp.payload[..resp.len]).map_err(std::io::Error::other)
+        };
+
         let unpack = |b: &[u8]| -> (u16, u16) {
             let val0 = (b[0] as u16) | (((b[1] & 0x0F) as u16) << 8);
             let val1 = ((b[1] >> 4) as u16) | ((b[2] as u16) << 4);
@@ -273,14 +289,14 @@ impl Controller {
         };
 
         // Get Firmware Versions
-        let resp = self.request(Packet::new(
+        let resp = request(Packet::new(
             Command::FirmwareInfo(FirmwareInfoSubCmd::GetVersion),
-            self.transport_kind,
+            kind,
             vec![],
         )?)?;
         info.firmware_version = (resp.data[0], resp.data[1], resp.data[2]);
         info.bluetooth_version = (resp.data[4], resp.data[5], resp.data[6]);
-        self.controller_type = match resp.data[3] {
+        let controller_type = match resp.data[3] {
             0x00 => ControllerType::JoyConL,
             0x01 => ControllerType::JoyConR,
             0x02 => ControllerType::ProController2,
@@ -289,9 +305,9 @@ impl Controller {
         };
 
         // Get Serial Number
-        let resp = self.request(Packet::new(
+        let resp = request(Packet::new(
             Command::Spi(SpiSubCmd::MemoryRead),
-            self.transport_kind,
+            kind,
             vec![0x10, 0x7E, 0x00, 0x00, 0x02, 0x30, 0x01, 0x00],
         )?)?;
         info.serial = String::from_utf8_lossy(&resp.data[8..])
@@ -299,18 +315,18 @@ impl Controller {
             .to_string();
 
         // Get Vendor + Product ID
-        let resp = self.request(Packet::new(
+        let resp = request(Packet::new(
             Command::Spi(SpiSubCmd::MemoryRead),
-            self.transport_kind,
+            kind,
             vec![0x10, 0x7E, 0x00, 0x00, 0x12, 0x30, 0x01, 0x00],
         )?)?;
         info.vendor = u16::from_le_bytes([resp.data[8], resp.data[9]]);
         info.product = u16::from_le_bytes([resp.data[10], resp.data[11]]);
 
         // Get Primary Stick Calibration
-        let resp = self.request(Packet::new(
+        let resp = request(Packet::new(
             Command::Spi(SpiSubCmd::MemoryRead),
-            self.transport_kind,
+            kind,
             vec![0x09, 0x7E, 0x00, 0x00, 0xA8, 0x30, 0x01, 0x00],
         )?)?;
         let cal = &resp.data[8..];
@@ -327,9 +343,9 @@ impl Controller {
         };
 
         // Get Secondary Stick Calibration
-        let resp = self.request(Packet::new(
+        let resp = request(Packet::new(
             Command::Spi(SpiSubCmd::MemoryRead),
-            self.transport_kind,
+            kind,
             vec![0x09, 0x7E, 0x00, 0x00, 0xE8, 0x30, 0x01, 0x00],
         )?)?;
         let cal = &resp.data[8..];
@@ -347,9 +363,9 @@ impl Controller {
 
         // Get Gyroscope Factory Calibration ADDRESS 0x13040
         // Returns float32 values { temp, gyro_x, gyro_y, gyro_x }
-        let resp = self.request(Packet::new(
+        let resp = request(Packet::new(
             Command::Spi(SpiSubCmd::MemoryRead),
-            self.transport_kind,
+            kind,
             vec![0x10, 0x7E, 0x00, 0x00, 0x40, 0x30, 0x01, 0x00],
         )?)?;
         let floats: Vec<f32> = resp.data[8..]
@@ -361,9 +377,9 @@ impl Controller {
 
         // Get Accelerometer / Magnetometer Factory Calibration ADDRESS 0x13100
         // Returns float32 values { mag_x, mag_y, mag_z, accel_x, accel_y, accel_z }
-        let resp = self.request(Packet::new(
+        let resp = request(Packet::new(
             Command::Spi(SpiSubCmd::MemoryRead),
-            self.transport_kind,
+            kind,
             vec![0x18, 0x7E, 0x00, 0x00, 0x00, 0x31, 0x01, 0x00],
         )?)?;
         let floats: Vec<f32> = resp.data[8..]
@@ -373,7 +389,7 @@ impl Controller {
         info.factory_calibration.mag_bias = Vector3::new(floats[0], floats[1], floats[2]);
         info.factory_calibration.accel_bias = Vector3::new(floats[3], floats[4], floats[5]);
 
-        Ok(info)
+        Ok((info, controller_type))
     }
 
     fn init(transport: Box<dyn Transport>, kind: TransportType) -> std::io::Result<Self> {
@@ -393,28 +409,81 @@ impl Controller {
             ..Params::default()
         };
 
-        let mut ctrl = Self {
-            transport,
+        // perform device initialization
+        let packets = Self::init_sequence(kind).map_err(|e| std::io::Error::other(e))?;
+        for packet in packets {
+            println!("[sw2ctl] [REQUEST ] {packet:?} {:02X?}", packet.to_bytes());
+            transport.send_command(&packet.to_bytes())?;
+            let resp = transport.recv_response()?;
+            let resp =
+                Packet::from_response(&resp.payload[..resp.len]).map_err(std::io::Error::other)?;
+            println!("[sw2ctl] [RESPONSE] {resp:?} {:02X?}", resp.to_bytes());
+        }
+
+        // read device information
+        let (device_info, controller_type) = Self::read_device_info(&*transport, kind)?;
+
+        // setup SPSC
+        let signal = Arc::new((Mutex::new(false), Condvar::new()));
+        let signal_tx = Arc::clone(&signal);
+
+        let (prod, cons) = HeapRb::<InputReport>::new(BUFFER_CAPACITY).split();
+        let (rumble_tx, rumble_rx) = mpsc::channel::<[u8; 64]>();
+        let poll_thread = thread::spawn(move || {
+            Self::poll_loop(transport, kind, prod, rumble_rx, signal_tx);
+        });
+
+        Ok(Self {
             transport_kind: kind,
             vqf: VQF::new(1.0, None, None, Some(params)),
             previous_time: None,
             sample_count: 0,
-            device_info: DeviceInfo::default(),
-            controller_type: ControllerType::Unknown,
-        };
+            device_info,
+            controller_type,
+            poll_thread,
+            consumer: cons,
+            rumble_tx,
+            rumble_seq: 0,
+            signal,
+        })
+    }
 
-        let packets = Self::init_sequence(kind)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    fn poll_loop(
+        transport: Box<dyn Transport>,
+        kind: TransportType,
+        mut prod: HeapProd<InputReport>,
+        rumble_rx: std::sync::mpsc::Receiver<[u8; 64]>,
+        signal: Arc<(Mutex<bool>, Condvar)>,
+    ) {
+        // HID Polling loop + Rumble event loop
+        loop {
+            // handle rumble events
+            while let Ok(data) = rumble_rx.try_recv() {
+                let _ = transport.send_hid_cmd(&data);
+            }
 
-        println!(
-            "[sw2ctl] Running init sequence ({} commands)",
-            packets.len()
-        );
-        ctrl.run_sequence(packets)?;
+            let resp = match transport.recv_hid() {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("[poll] read error: {e}");
+                    break;
+                }
+            };
 
-        ctrl.device_info = ctrl.read_device_info()?;
+            for chunk in resp.payload[..resp.len].chunks_exact(64) {
+                let parsed = match kind {
+                    TransportType::Usb => InputReport::from_bytes(&chunk[1..]),
+                    TransportType::Ble => InputReport::from_bytes(chunk),
+                };
 
-        Ok(ctrl)
+                if let Ok(report) = parsed {
+                    let _ = prod.try_push(report);
+                    let (lock, cvar) = &*signal;
+                    *lock.lock().unwrap() = true;
+                    cvar.notify_one();
+                }
+            }
+        }
     }
 }
 

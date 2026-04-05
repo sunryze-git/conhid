@@ -4,7 +4,7 @@ mod report;
 mod transport;
 mod virtualdevice;
 
-use std::{thread, time::Duration};
+use std::thread;
 
 use crate::{controller::Controller, virtualdevice::create_virtual_controller};
 
@@ -112,8 +112,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     for handle in handles {
-        if let Err(e) = handle.join() {
-            eprintln!("[sw2ctl] A controller thread panicked: {e:?}");
+        match handle.join() {
+            Err(e) => {
+                eprintln!("[sw2ctl] A controller thread panicked: {e:?}");
+            }
+            _ => (),
         }
     }
 

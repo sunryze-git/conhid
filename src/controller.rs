@@ -1,14 +1,13 @@
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Condvar, Mutex};
-use std::thread::{self, JoinHandle};
-use std::time::Instant;
+use std::thread::{self};
 
 use nalgebra::{UnitQuaternion, Vector3};
 use ringbuf::traits::{Consumer, Producer, Split};
 use ringbuf::{HeapCons, HeapProd, HeapRb};
 
 use crate::packet::*;
-use crate::report::{InputReport, MagData, MotionData, ParseError};
+use crate::report::{InputReport, MagData, MotionData};
 use crate::transport::Transport;
 use crate::transport::ble::{BleHandles, BleTransport};
 use crate::transport::usb::UsbTransport;
@@ -21,14 +20,12 @@ const BUFFER_CAPACITY: usize = 64;
 use vqf_rs::{Params, VQF};
 
 pub struct Controller {
-    transport_kind: TransportType,
     vqf: VQF,
     previous_time: Option<u32>,
     sample_count: u128,
     pub device_info: DeviceInfo,
     pub controller_type: ControllerType,
 
-    poll_thread: JoinHandle<()>,
     consumer: HeapCons<InputReport>,
     rumble_tx: Sender<[u8; 64]>,
     rumble_seq: u8,
@@ -429,18 +426,16 @@ impl Controller {
 
         let (prod, cons) = HeapRb::<InputReport>::new(BUFFER_CAPACITY).split();
         let (rumble_tx, rumble_rx) = mpsc::channel::<[u8; 64]>();
-        let poll_thread = thread::spawn(move || {
+        thread::spawn(move || {
             Self::poll_loop(transport, kind, prod, rumble_rx, signal_tx);
         });
 
         Ok(Self {
-            transport_kind: kind,
             vqf: VQF::new(1.0, None, None, Some(params)),
             previous_time: None,
             sample_count: 0,
             device_info,
             controller_type,
-            poll_thread,
             consumer: cons,
             rumble_tx,
             rumble_seq: 0,

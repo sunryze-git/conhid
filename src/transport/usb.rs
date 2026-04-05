@@ -38,25 +38,23 @@ impl UsbTransport {
             let desc = device.device_descriptor().unwrap();
 
             if desc.vendor_id() == NINTENDO_VID && SW2_PIDS.contains(&desc.product_id()) {
-                let handle = device
-                    .open()
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                let handle = device.open().map_err(|e| std::io::Error::other(e))?;
 
                 let mut kernel_driver_attached = [false; 2];
                 for iface in [HID_INTERFACE, BULK_INTERFACE] {
                     kernel_driver_attached[iface as usize] =
                         match handle.kernel_driver_active(iface) {
                             Ok(true) => {
-                                handle.detach_kernel_driver(iface).map_err(|e| {
-                                    std::io::Error::new(std::io::ErrorKind::Other, e)
-                                })?;
+                                handle
+                                    .detach_kernel_driver(iface)
+                                    .map_err(|e| std::io::Error::other(e))?;
                                 true
                             }
                             _ => false,
                         };
                     handle
                         .claim_interface(iface)
-                        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                        .map_err(|e| std::io::Error::other(e))?;
                 }
 
                 return Ok(UsbTransport {
@@ -77,7 +75,7 @@ impl Transport for UsbTransport {
     fn send_command(&self, buf: &[u8]) -> Result<(), std::io::Error> {
         self.handle
             .write_bulk(EP_OUT, buf, Duration::from_millis(TRANSPORT_TIMEOUT))
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(|e| std::io::Error::other(e))?;
         Ok(())
     }
 
@@ -90,7 +88,7 @@ impl Transport for UsbTransport {
                 &mut buf,
                 Duration::from_millis(TRANSPORT_TIMEOUT),
             )
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(|e| std::io::Error::other(e))?;
         Ok(TransportData {
             payload: buf,
             len: bytes_read,
@@ -98,14 +96,6 @@ impl Transport for UsbTransport {
     }
 
     fn recv_hid(&self) -> Result<TransportData, std::io::Error> {
-        // Return the pending report, if there is one
-        {
-            let mut pending = self.pending.lock().unwrap();
-            if let Some(data) = pending.pop_front() {
-                return Ok(data);
-            }
-        }
-
         let mut buf = [0u8; TRANSPORT_MTU];
         let bytes_read = self
             .handle
@@ -114,28 +104,17 @@ impl Transport for UsbTransport {
                 &mut buf,
                 Duration::from_millis(TRANSPORT_TIMEOUT),
             )
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-
-        // split into 64-byte reports
-        let mut pending = self.pending.lock().unwrap();
-        let mut offset = 64; // first report returned directly below
-        while offset + 64 <= bytes_read {
-            let mut payload = [0u8; TRANSPORT_MTU];
-            payload[..64].copy_from_slice(&buf[offset..offset + 64]);
-            pending.push_back(TransportData { payload, len: 64 });
-            offset += 64;
-        }
-
+            .map_err(std::io::Error::other)?;
         Ok(TransportData {
             payload: buf,
-            len: 64, // always exactly one report
+            len: bytes_read,
         })
     }
 
     fn send_hid_cmd(&self, buf: &[u8]) -> std::io::Result<()> {
         self.handle
             .write_interrupt(HID_OUT, buf, Duration::from_millis(TRANSPORT_TIMEOUT))
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(|e| std::io::Error::other(e))?;
         Ok(())
     }
 }

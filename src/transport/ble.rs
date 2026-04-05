@@ -277,8 +277,8 @@ impl BleTransport {
         // From here on: owned by AttSocket, no more manual close() calls.
         let mut sock = { unsafe { AttSocket::from_raw_fd(fd) } };
 
-        exchange_mtu(&mut sock)?;
-        enable_notifications(&mut sock, &handles)?;
+        exchange_mtu(&sock)?;
+        enable_notifications(&sock, &handles)?;
         drain(&mut sock)?;
 
         Ok(Self { sock, handles })

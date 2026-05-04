@@ -102,7 +102,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     Ok(n) => {
                         let _ = controller.update_orientation(&n.motion, &n.magnetometer);
 
-                        if let Err(e) = n.emit_to_device(&mut vdevice) {
+                        if let Err(e) = n.emit_to_device(
+                            &mut vdevice,
+                            &controller.device_info.factory_calibration,
+                        ) {
                             eprintln!("[{label}] emit error: {e}");
                         }
                     }

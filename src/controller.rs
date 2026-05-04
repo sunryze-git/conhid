@@ -33,12 +33,12 @@ pub struct DeviceInfo {
 
 #[derive(Debug, Default)]
 pub struct StickCalibration {
-    x_max: u16,
-    y_max: u16,
-    x_center: u16,
-    y_center: u16,
-    x_min: u16,
-    y_min: u16,
+    pub x_max: u16,
+    pub y_max: u16,
+    pub x_center: u16,
+    pub y_center: u16,
+    pub x_min: u16,
+    pub y_min: u16,
 }
 
 #[derive(Debug, Default)]
@@ -266,11 +266,6 @@ impl Controller {
 
     fn read_device_info(&mut self) -> std::io::Result<DeviceInfo> {
         let mut info = DeviceInfo::default();
-        let unpack = |b: &[u8]| -> (u16, u16) {
-            let val0 = (b[0] as u16) | (((b[1] & 0x0F) as u16) << 8);
-            let val1 = ((b[1] >> 4) as u16) | ((b[2] as u16) << 4);
-            (val0, val1)
-        };
 
         // Get Firmware Versions
         let resp = self.request(Packet::new(
@@ -314,16 +309,13 @@ impl Controller {
             vec![0x09, 0x7E, 0x00, 0x00, 0xA8, 0x30, 0x01, 0x00],
         )?)?;
         let cal = &resp.data[8..];
-        let (x_max, y_max) = unpack(&cal[0..3]);
-        let (x_center, y_center) = unpack(&cal[3..6]);
-        let (x_min, y_min) = unpack(&cal[6..9]);
         info.factory_calibration.primary_stick = StickCalibration {
-            x_max,
-            y_max,
-            x_center,
-            y_center,
-            x_min,
-            y_min,
+            x_max: cal[3] as u16 | (cal[4] as u16 & 0xF) << 8,
+            y_max: cal[4] as u16 | (cal[5] as u16) << 4,
+            x_center: cal[0] as u16 | (cal[1] as u16 & 0xF) << 8,
+            y_center: (cal[1] as u16) >> 4 | (cal[2] as u16) << 4,
+            x_min: cal[6] as u16 | (cal[7] as u16 & 0xF) << 8,
+            y_min: (cal[7] as u16) >> 4 | (cal[8] as u16) << 4,
         };
 
         // Get Secondary Stick Calibration
@@ -333,16 +325,13 @@ impl Controller {
             vec![0x09, 0x7E, 0x00, 0x00, 0xE8, 0x30, 0x01, 0x00],
         )?)?;
         let cal = &resp.data[8..];
-        let (x_max, y_max) = unpack(&cal[0..3]);
-        let (x_center, y_center) = unpack(&cal[3..6]);
-        let (x_min, y_min) = unpack(&cal[6..9]);
         info.factory_calibration.secondary_stick = StickCalibration {
-            x_max,
-            y_max,
-            x_center,
-            y_center,
-            x_min,
-            y_min,
+            x_max: cal[3] as u16 | (cal[4] as u16 & 0xF) << 8,
+            y_max: cal[4] as u16 | (cal[5] as u16) << 4,
+            x_center: cal[0] as u16 | (cal[1] as u16 & 0xF) << 8,
+            y_center: (cal[1] as u16) >> 4 | (cal[2] as u16) << 4,
+            x_min: cal[6] as u16 | (cal[7] as u16 & 0xF) << 8,
+            y_min: (cal[7] as u16) >> 4 | (cal[8] as u16) << 4,
         };
 
         // Get Gyroscope Factory Calibration ADDRESS 0x13040

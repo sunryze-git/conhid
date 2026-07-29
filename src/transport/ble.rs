@@ -21,9 +21,6 @@ const ATT_OP_HANDLE_NOTIFY: u8 = 0x1B;
 const ATT_OP_WRITE_REQ: u8 = 0x12;
 const ATT_OP_WRITE_CMD: u8 = 0x52;
 
-const INPUT_REPORT_1: u16 = 0x001B;
-const CCCD_NOTIFY: u16 = 0x002F;
-
 #[derive(Clone, Copy)]
 pub struct BleHandles {
     pub cmd_write: u16,

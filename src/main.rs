@@ -98,19 +98,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let handle = thread::Builder::new().name(label.clone()).spawn(move || {
             loop {
-                match controller.get_input() {
-                    Ok(n) => {
-                        let _ = controller.update_orientation(&n.motion, &n.magnetometer);
-
-                        if let Err(e) = n.emit_to_device(
-                            &mut vdevice,
-                            &controller.device_info.factory_calibration,
-                        ) {
-                            eprintln!("[{label}] emit error: {e}");
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("[{label}] HID read error: {e}");
+                controller.wait_for_input();
+                while let Some(n) = controller.get_input() {
+                    let _ = controller.update_orientation(&n.motion, &n.magnetometer);
+                    if let Err(e) = n.emit_to_device(&mut vdevice) {
+                        eprintln!("[{label}] emit error: {e}");
                     }
                 }
             }

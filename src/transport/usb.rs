@@ -1,8 +1,6 @@
 use super::Transport;
 use crate::transport::{TRANSPORT_MTU, TRANSPORT_TIMEOUT, TransportData};
 use rusb::{DeviceHandle, GlobalContext};
-use std::collections::VecDeque;
-use std::sync::Mutex;
 use std::time::Duration;
 
 const NINTENDO_VID: u16 = 0x057E;
@@ -27,7 +25,6 @@ const HID_OUT: u8 = 0x01;
 pub struct UsbTransport {
     handle: DeviceHandle<GlobalContext>,
     kernel_driver_attached: [bool; 2],
-    pending: Mutex<VecDeque<TransportData>>,
 }
 
 impl UsbTransport {
@@ -60,7 +57,6 @@ impl UsbTransport {
                 return Ok(UsbTransport {
                     handle,
                     kernel_driver_attached,
-                    pending: Mutex::default(),
                 });
             }
         }

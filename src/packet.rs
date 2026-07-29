@@ -406,7 +406,7 @@ impl Packet {
             header: Header {
                 command,
                 packet_status: PacketStatus::Request,
-                transport_type: transport_type,
+                transport_type,
                 data_length,
             },
             data,
@@ -442,7 +442,7 @@ impl Packet {
 
 impl From<PacketError> for std::io::Error {
     fn from(e: PacketError) -> Self {
-        std::io::Error::new(std::io::ErrorKind::Other, e)
+        std::io::Error::other(e)
     }
 }
 

@@ -3,6 +3,8 @@ use std::io::Error;
 
 use evdev::{AbsoluteAxisCode, EventType, InputEvent, KeyCode, uinput::VirtualDevice};
 
+use crate::controller::{FactoryCalibration, StickCalibration};
+
 pub struct InputReport {
     pub counter: u32,
     pub buttons: Buttons,
@@ -212,6 +214,7 @@ impl InputReport {
     pub fn emit_to_device(
         &self,
         device: &mut VirtualDevice,
+        cal: &FactoryCalibration,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let mut events: Vec<InputEvent> = Vec::with_capacity(28);
 
@@ -252,8 +255,8 @@ impl InputReport {
             hat_y,
         ));
 
-        let (lx, ly) = self.left_stick.to_evdev_axes();
-        let (rx, ry) = self.right_stick.to_evdev_axes();
+        let (lx, ly) = self.left_stick.to_evdev_axes(&cal.primary_stick);
+        let (rx, ry) = self.right_stick.to_evdev_axes(&cal.secondary_stick);
         events.push(InputEvent::new(
             EventType::ABSOLUTE.0,
             AbsoluteAxisCode::ABS_X.0,
@@ -300,8 +303,22 @@ impl StickData {
         Self { x, y }
     }
 
-    pub fn to_evdev_axes(&self) -> (i32, i32) {
-        let scale = |v: u16| -> i32 { ((v as i32 - 2048) * 32767) / 2048 };
-        (scale(self.x), -scale(self.y)) // negate Y
+    pub fn to_evdev_axes(&self, cal: &StickCalibration) -> (i32, i32) {
+        let x = self.x as i32 - cal.x_center as i32;
+        let y = self.y as i32 - cal.y_center as i32;
+        (
+            x * 32767
+                / if x < 0 {
+                    cal.x_min as i32
+                } else {
+                    cal.x_max as i32
+                },
+            -y * 32767
+                / if y < 0 {
+                    cal.y_min as i32
+                } else {
+                    cal.y_max as i32
+                },
+        )
     }
 }
